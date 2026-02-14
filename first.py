@@ -26,3 +26,16 @@ nfans = [1.2, 1.3, 0.5, 1.0]
 data = [toes[0], wlrec[0], nfans[0]]
 pred = neural_network(data, weight)
 print(pred)
+
+a = [ 0, 1, 0, 1]
+b = [ 1, 0, 1, 0]
+c = [ 0, 1, 1, 0]
+d = [.5, 0,.5, 0]
+e = [ 0, 1,-1, 0]
+
+print(w_sum(a,b)) # = 0
+print(w_sum(b,c)) # = 1
+print(w_sum(b,d)) # = 1
+print(w_sum(c,c)) # = 2
+print(w_sum(d,d)) # = .5
+print(w_sum(c,e)) # = 0

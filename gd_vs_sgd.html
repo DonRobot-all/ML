@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GD vs SGD</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, sans-serif;
+    background: #f5f5f3;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 24px;
+  }
+
+  .wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    max-width: 780px;
+  }
+
+  @media (max-width: 560px) { .wrap { grid-template-columns: 1fr; } }
+
+  canvas {
+    display: block;
+    border-radius: 10px;
+    background: #ececea;
+    width: 100%;
+  }
+
+  .panel-label {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 6px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 16px 0;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #555;
+    max-width: 780px;
+  }
+
+  .controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  input[type=range] {
+    width: 110px;
+    accent-color: #378ADD;
+  }
+
+  button {
+    padding: 6px 14px;
+    border: 0.5px solid #ccc;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+
+  button:hover { background: #f0f0ee; }
+  button:active { transform: scale(0.97); }
+
+  .log {
+    font-family: monospace;
+    font-size: 11px;
+    color: #888;
+    background: #ececea;
+    border-radius: 10px;
+    padding: 10px 12px;
+    height: 130px;
+    overflow-y: auto;
+    border: 0.5px solid #ddd;
+  }
+
+  .log-row { margin: 2px 0; }
+  .log-row.back { color: #c0392b; }
+  .log-row.win  { color: #27ae60; font-weight: 500; }
+
+  .formula {
+    font-family: monospace;
+    font-size: 13px;
+    background: #ececea;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    max-width: 780px;
+    border: 0.5px solid #ddd;
+    color: #333;
+  }
+</style>
+</head>
+<body>
+
+<h1>Градиентный спуск vs SGD</h1>
+<p class="subtitle">Задача: найти минимум f(x) = (x − 3)²</p>
+
+<div class="formula">
+  f(x) = (x − 3)²&nbsp;&nbsp;&nbsp;
+  f'(x) = 2·(x − 3)&nbsp;&nbsp;&nbsp;
+  минимум при x = 3
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="panel-label">Полный GD — градиент точный</div>
+    <canvas id="cv1" height="200"></canvas>
+  </div>
+  <div>
+    <div class="panel-label">SGD — градиент с шумом</div>
+    <canvas id="cv2" height="200"></canvas>
+  </div>
+</div>
+
+<div class="controls">
+  <label>α =
+    <input type="range" id="lr" min="1" max="25" value="10" step="1">
+    <span id="lr-out">0.10</span>
+  </label>
+  <label>Шум SGD =
+    <input type="range" id="noise" min="0" max="30" value="15" step="1">
+    <span id="noise-out">1.5</span>
+  </label>
+  <button onclick="restart()">Заново</button>
+  <button onclick="stepBoth()">Шаг →</button>
+  <button onclick="toggleAuto()" id="btn-auto">Авто</button>
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="panel-label">Лог GD</div>
+    <div class="log" id="log1"></div>
+  </div>
+  <div>
+    <div class="panel-label">Лог SGD <span style="color:#c0392b;font-size:10px">← красный = шаг назад</span></div>
+    <div class="log" id="log2"></div>
+  </div>
+</div>
+
+<script>
+const f  = x => (x - 3) ** 2;
+const df = x => 2 * (x - 3);
+
+let lr = 0.10, noiseAmp = 1.5;
+let xGD, xSGD, stepCount, autoOn = false;
+
+function restart() {
+  xGD = 0; xSGD = 0; stepCount = 0;
+  document.getElementById('log1').innerHTML = '';
+  document.getElementById('log2').innerHTML = '';
+  drawBoth();
+}
+
+function drawCurve(ctx, W, H) {
+  ctx.beginPath();
+  for (let i = 0; i <= 200; i++) {
+    const x  = -1 + i / 200 * 8;
+    const cx = (x + 1) / 8 * (W - 20) + 10;
+    const cy = H - 10 - Math.min(f(x) / 16, 0.95) * (H - 30);
+    i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+  }
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const mx = (3 + 1) / 8 * (W - 20) + 10;
+  ctx.beginPath(); ctx.moveTo(mx, H - 4); ctx.lineTo(mx, H - 14);
+  ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#27ae60';
+  ctx.font = '10px monospace';
+  ctx.fillText('x=3', mx - 10, H - 16);
+}
+
+function drawBall(ctx, W, H, x, color) {
+  const cx = (x + 1) / 8 * (W - 20) + 10;
+  const cy = H - 10 - Math.min(f(x) / 16, 0.95) * (H - 30);
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(x.toFixed(1), cx, cy + 3);
+  ctx.textAlign = 'left';
+}
+
+function drawCanvas(id, x, color) {
+  const cv  = document.getElementById(id);
+  const ctx = cv.getContext('2d');
+  const W   = cv.offsetWidth || 360;
+  cv.width  = W; cv.height = 200;
+  ctx.clearRect(0, 0, W, 200);
+  drawCurve(ctx, W, 200);
+  drawBall(ctx, W, 200, Math.max(-0.9, Math.min(6.9, x)), color);
+}
+
+function drawBoth() {
+  drawCanvas('cv1', xGD,  '#378ADD');
+  drawCanvas('cv2', xSGD, '#D85A30');
+}
+
+function addLog(id, step, xOld, xNew, back) {
+  const log = document.getElementById(id);
+  const cls = back ? 'back' : (Math.abs(xNew - 3) < 0.05 ? 'win' : '');
+  const row = document.createElement('div');
+  row.className = 'log-row ' + cls;
+  const dir = back ? '← назад' : '';
+  row.textContent = `шаг ${String(step).padStart(2,' ')}: x=${xNew.toFixed(4)}  f=${f(xNew).toFixed(4)} ${dir}`;
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+function stepBoth() {
+  stepCount++;
+
+  const prevGD = xGD;
+  xGD = xGD - lr * df(xGD);
+  xGD = Math.max(-0.9, Math.min(6.9, xGD));
+  addLog('log1', stepCount, prevGD, xGD, false);
+
+  const prevSGD = xSGD;
+  const noise   = (Math.random() - 0.5) * 2 * noiseAmp;
+  xSGD = xSGD - lr * (df(xSGD) + noise);
+  xSGD = Math.max(-0.9, Math.min(6.9, xSGD));
+  addLog('log2', stepCount, prevSGD, xSGD, f(xSGD) > f(prevSGD));
+
+  drawBoth();
+}
+
+function toggleAuto() {
+  autoOn = !autoOn;
+  document.getElementById('btn-auto').textContent = autoOn ? 'Стоп' : 'Авто';
+  if (autoOn) autoRun();
+}
+
+function autoRun() {
+  if (!autoOn) return;
+  stepBoth();
+  setTimeout(autoRun, 500);
+}
+
+document.getElementById('lr').addEventListener('input', e => {
+  lr = e.target.value / 100;
+  document.getElementById('lr-out').textContent = lr.toFixed(2);
+  restart();
+});
+
+document.getElementById('noise').addEventListener('input', e => {
+  noiseAmp = e.target.value / 10;
+  document.getElementById('noise-out').textContent = noiseAmp.toFixed(1);
+  restart();
+});
+
+window.addEventListener('resize', drawBoth);
+restart();
+</script>
+</body>
+</html>

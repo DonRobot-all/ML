@@ -1,0 +1,139 @@
+
+<style>
+  canvas { display:block; border-radius: var(--border-radius-md); background: var(--color-background-secondary); }
+  .row { display:flex; gap:16px; align-items:flex-start; margin-bottom:16px; }
+  .panel { flex:1; min-width:0; }
+  .label { font-size:12px; color:var(--color-text-secondary); margin:0 0 6px; }
+  .formula { font-size:13px; font-family:var(--font-mono); color:var(--color-text-primary); background:var(--color-background-secondary); border-radius:var(--border-radius-md); padding:8px 12px; margin:8px 0; border:0.5px solid var(--color-border-tertiary); }
+  .verdict { font-size:13px; font-weight:500; padding:6px 12px; border-radius:var(--border-radius-md); display:inline-block; margin-top:6px; }
+  .v-ok { background:var(--color-background-success); color:var(--color-text-success); }
+  .v-fail { background:var(--color-background-danger); color:var(--color-text-danger); }
+  button { margin:4px; font-size:12px; }
+</style>
+
+<h2 class="sr-only">Интерактивная демонстрация: зачем нужен скрытый слой в нейросети</h2>
+
+<div class="row">
+  <div class="panel">
+    <p class="label">Задача: научить сеть различать два класса точек</p>
+    <canvas id="cv" width="300" height="300"></canvas>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="setTask('linear')">Линейная задача</button>
+      <button onclick="setTask('xor')">XOR (сложная)</button>
+      <button onclick="setTask('circle')">Круг внутри</button>
+    </div>
+  </div>
+  <div class="panel" style="min-width:200px">
+    <p class="label">Без скрытого слоя</p>
+    <div class="formula" id="f-direct">выход = w₁·x + w₂·y + b</div>
+    <div id="verdict-direct" class="verdict v-fail">Не справляется</div>
+    <p class="label" style="margin-top:16px">Со скрытым слоем</p>
+    <div class="formula" id="f-hidden">h₁ = ReLU(w·x + w·y + b)<br>h₂ = ReLU(w·x + w·y + b)<br>выход = w·h₁ + w·h₂ + b</div>
+    <div id="verdict-hidden" class="verdict v-ok">Справляется</div>
+    <p class="label" style="margin-top:16px;font-size:11px;opacity:0.7">Граница решения — то, что нейросеть "нарисовала" внутри себя. Одна линия = нет скрытого слоя. Кривая = есть скрытый слой.</p>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 300, H = 300;
+
+let task = 'xor';
+let points = [];
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+function genPoints(t) {
+  points = [];
+  if(t === 'linear') {
+    for(let i=0;i<40;i++){
+      let x=rand(0.05,0.95), y=rand(0.05,0.95);
+      points.push({x,y,c: y > x+0.1 ? 1 : 0});
+    }
+    document.getElementById('verdict-direct').textContent = 'Справляется';
+    document.getElementById('verdict-direct').className = 'verdict v-ok';
+    document.getElementById('verdict-hidden').textContent = 'Справляется';
+    document.getElementById('verdict-hidden').className = 'verdict v-ok';
+    document.getElementById('f-direct').textContent = 'выход = w₁·x + w₂·y + b';
+  } else if(t === 'xor') {
+    for(let i=0;i<50;i++){
+      let x=rand(0.05,0.95), y=rand(0.05,0.95);
+      let c = (x>0.5) === (y>0.5) ? 1 : 0;
+      points.push({x,y,c});
+    }
+    document.getElementById('verdict-direct').textContent = 'Не справляется';
+    document.getElementById('verdict-direct').className = 'verdict v-fail';
+    document.getElementById('verdict-hidden').textContent = 'Справляется';
+    document.getElementById('verdict-hidden').className = 'verdict v-ok';
+    document.getElementById('f-direct').textContent = 'Одна прямая не разделит эти классы';
+  } else {
+    for(let i=0;i<60;i++){
+      let x=rand(0.05,0.95), y=rand(0.05,0.95);
+      let dx=x-0.5, dy=y-0.5;
+      let c = dx*dx+dy*dy < 0.08 ? 1 : 0;
+      points.push({x,y,c});
+    }
+    document.getElementById('verdict-direct').textContent = 'Не справляется';
+    document.getElementById('verdict-direct').className = 'verdict v-fail';
+    document.getElementById('verdict-hidden').textContent = 'Справляется';
+    document.getElementById('verdict-hidden').className = 'verdict v-ok';
+    document.getElementById('f-direct').textContent = 'Круг — не линейная граница';
+  }
+}
+
+function drawBg(t) {
+  const id = ctx.createImageData(W,H);
+  for(let px=0;px<W;px++){
+    for(let py=0;py<H;py++){
+      let x=px/W, y=py/H;
+      let val = 0;
+      if(t==='linear') val = y > x+0.1 ? 1 : 0;
+      else if(t==='xor') val = (x>0.5)===(y>0.5) ? 1 : 0;
+      else { let dx=x-0.5,dy=y-0.5; val=dx*dx+dy*dy<0.08?1:0; }
+      let i=(py*W+px)*4;
+      if(val===1){id.data[i]=59;id.data[i+1]=170;id.data[i+2]=165;id.data[i+3]=55;}
+      else{id.data[i]=208;id.data[i+1]=90;id.data[i+2]=48;id.data[i+3]=55;}
+    }
+  }
+  ctx.putImageData(id,0,0);
+}
+
+function drawPoints() {
+  for(const p of points){
+    ctx.beginPath();
+    ctx.arc(p.x*W, p.y*H, 6, 0, Math.PI*2);
+    ctx.fillStyle = p.c===1 ? '#0F6E56' : '#993C1D';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawLinearBoundary(t) {
+  ctx.save();
+  ctx.setLineDash([6,4]);
+  ctx.strokeStyle = 'rgba(200,200,200,0.9)';
+  ctx.lineWidth = 2;
+  if(t==='linear'){
+    ctx.beginPath(); ctx.moveTo(0,W*0.1); ctx.lineTo(W,W*1.1); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(0,H*0.5); ctx.lineTo(W,H*0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W*0.5,0); ctx.lineTo(W*0.5,H); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  drawBg(task);
+  drawLinearBoundary(task);
+  drawPoints();
+}
+
+function setTask(t){ task=t; genPoints(t); draw(); }
+
+genPoints(task);
+draw();
+</script>
